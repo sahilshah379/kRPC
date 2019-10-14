@@ -13,7 +13,7 @@ import org.javatuples.Triplet;
 
 import java.io.IOException;
 
-public class Launch {
+public class Rocket {
     public static void main(String[] args) throws IOException, RPCException, StreamException {
         try (Connection connection = Connection.newInstance("Server", "127.0.0.1", 50000,50001)) {
             System.out.println(KRPC.newInstance(connection).getStatus().getVersion());
