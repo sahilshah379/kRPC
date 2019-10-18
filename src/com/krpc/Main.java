@@ -18,8 +18,10 @@ public class Main {
         Rocket rocket = new Rocket();
         rocket.setupRocket();
 
-        rocket.launchRocket(100,Math.PI/4);
+        rocket.launchRocket(5593,Math.toRadians(30));
         System.out.println(rocket.getMaxHeight());
+        System.out.println(rocket.getImpactTime());
+        System.out.println(rocket.getRange());
 
         while (true) {
 

@@ -2,7 +2,6 @@ package com.krpc.rocket;
 
 import com.krpc.Main;
 import com.krpc.math.MathUtils;
-import com.krpc.rocket.threads.AttitudeThread;
 import com.krpc.rocket.threads.VelocityThread;
 import krpc.client.RPCException;
 import krpc.client.Stream;
@@ -19,17 +18,18 @@ public class Rocket {
     private Stream<Double> altitudeStream;
     private Stream<Double> velocityStream;
 
-    private AttitudeThread attitudeThread;
     private VelocityThread velocityThread;
 
-    private final double R = 600000; // equatorial radius of kerbin
+    private final double INCREMENT = 10e-4;
+    private final double R = 6378000;//600000; // equatorial radius of kerbin
     private final double g = 9.81; // surface gravity
     private double v_0; // initial velocity
     private double b; // launch angle
     private double t_0; // time of launch
     private double t_i; // time of impact
-
-    private double a = 2*g*R/(v_0*v_0);
+    private double H; // max height
+    private double L; // range
+    private double a;
 
     private Vessel vessel;
 
@@ -57,6 +57,10 @@ public class Rocket {
         vessel.getAutoPilot().targetPitchAndHeading(45,0);
 
         setVelocity(100);
+
+        t_i = calcImpactTime()*1000+t_0;
+        H = calcMaxHeight();
+        L = calcRange();
     }
     public Vessel getVessel() {
         return vessel;
@@ -117,7 +121,40 @@ public class Rocket {
             }
         }
     }
-    public double getMaxHeight() {
+    public double calcMaxHeight() {
         return R*(-1+((a+Math.sqrt(a*a-4*(a-1)*Math.pow(Math.cos(b),2)))/(2*(a-1))));
+    }
+    private double getRadiusRatio(double y) {
+        return y/Math.sqrt(y*y*(1-a)+a*y-Math.pow(Math.cos(b),2));
+    }
+    public double calcImpactTime() {
+        double area = 0;
+        for(double i = 1 + INCREMENT; i < (1+H/R); i += INCREMENT) {
+            double dFromA = i - 1;
+            area += (INCREMENT / 2) * (getRadiusRatio(1 + dFromA) + getRadiusRatio(1 + dFromA - INCREMENT));
+        }
+
+        return (2*R/v_0) * area;
+    }
+    public double calcRange() {
+        return ((t_i-t_0)/1000)*v_0*Math.cos(b);
+    }
+    public double getInitialVelocity() {
+        return v_0;
+    }
+    public double getInitialAngle() {
+        return b;
+    }
+    public double getLaunchTime() {
+        return t_0;
+    }
+    public double getImpactTime() {
+        return t_i;
+    }
+    public double getRange() {
+        return L;
+    }
+    public double getMaxHeight() {
+        return H;
     }
 }
