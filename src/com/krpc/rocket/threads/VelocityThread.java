@@ -21,12 +21,14 @@ public class VelocityThread extends Thread {
                 double currentVelocity = rocket.getVelocity();
                 double thrust = 0;
                 if (currentVelocity/targetVelocity > 1) {
-                    thrust = 0.5 - (currentVelocity/targetVelocity)/5;
+                    thrust = 0.5 - (currentVelocity/targetVelocity)/3;
                 } else if (currentVelocity/targetVelocity < 0.5) {
                     thrust = 1;
                 } else {
                     thrust = (1-currentVelocity/targetVelocity)+0.5;
                 }
+//                System.out.println(currentVelocity + "\t" + targetVelocity + "\t" + thrust);
+
                 rocket.getVessel().getControl().setThrottle((float)thrust);
 
                 Thread.sleep(update);

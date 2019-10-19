@@ -18,13 +18,15 @@ public class Main {
         Rocket rocket = new Rocket();
         rocket.setupRocket();
 
-        rocket.launchRocket(5593,Math.toRadians(30));
-        System.out.println(rocket.getMaxHeight());
-        System.out.println(rocket.getImpactTime());
-        System.out.println(rocket.getRange());
+        rocket.launchRocket(200,90);
+        System.out.println("H = " + rocket.getMaxHeight());
+        System.out.println("t_i = " + rocket.getImpactTime());
+        System.out.println("L = " + rocket.getRange());
 
-        while (true) {
-
-        }
+        while (rocket.adjustPitch(System.currentTimeMillis())) {}
+//        while (true) {
+////            rocket.getVessel().getAutoPilot().targetPitchAndHeading(-45,0);
+//            System.out.println(rocket.getAttitude().getValue0() + "\t" + rocket.getAttitude().getValue1() + "\t" + rocket.getAttitude().getValue2());
+//        }
     }
 }
