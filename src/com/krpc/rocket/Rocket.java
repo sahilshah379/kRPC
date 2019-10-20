@@ -20,16 +20,18 @@ public class Rocket {
 
     private VelocityThread velocityThread;
 
-    private final double INCREMENT = 10e-4;
-    private final double R = 600000; // equatorial radius of kerbin
+    private final double R = 6e5; // equatorial radius of kerbin
+    private final double M = 5.2915158e22; // mass of kerbin
+    private final double G = 6.67408e-11; // universal gravitational constant
     private final double g = 9.81; // surface gravity
+
+    private double h_g1; // gravitational turn lower altitude
+    private double h_g2; // gravitational turn lower altitude
     private double v_0; // initial velocity
-    private double b; // launch angle
-    private double t_0; // time of launch
-    private double t_i; // time of impact
-    private double H; // max height
-    private double L; // range
-    private double a;
+    private double h_b; // burnout altitude
+    private double thetaMax; // ellipse angle
+
+    private double gravityTurnAngle = 0;
 
     private Vessel vessel;
 
@@ -43,18 +45,18 @@ public class Rocket {
         velocityStream = Main.connection.addStream(flight, "getSpeed");
     }
     public void launchRocket() throws RPCException {
-        this.t_0 = System.currentTimeMillis();
-
         vessel.getControl().setSAS(false);
         vessel.getControl().setRCS(true);
         vessel.getControl().setThrottle(1);
         vessel.getControl().activateNextStage();
     }
-    public void launchRocket(double v_0, double b) throws RPCException {
-        this.v_0 = v_0;
-        this.b = b;
-        this.a = 2*g*R/(v_0*v_0);
-        this.t_0 = System.currentTimeMillis();
+    public void launchRocket(double L, double h_b, double h_g1, double h_g2) throws RPCException, StreamException {
+        this.h_b = h_b;
+        this.h_g1 = h_g1;
+        this.h_g2 = h_g2;
+
+        this.thetaMax = L/(2*R);
+        this.v_0 = Math.sqrt(2*G*M/R)*Math.sqrt(Math.sin(thetaMax)/(1+Math.sin(thetaMax)));
 
         vessel.getControl().setSAS(false);
         vessel.getControl().setRCS(true);
@@ -62,15 +64,9 @@ public class Rocket {
         vessel.getControl().activateNextStage();
 
         vessel.getAutoPilot().engage();
-        vessel.getAutoPilot().targetPitchAndHeading((float) b,0);
+        vessel.getAutoPilot().targetPitchAndHeading(90,90);
 
         setVelocity(v_0);
-
-
-        System.out.println("a = " + a);
-        H = calcMaxHeight();
-        t_i = calcImpactTime()*1000+t_0;
-        L = calcRange();
     }
     public Vessel getVessel() {
         return vessel;
@@ -117,66 +113,46 @@ public class Rocket {
         return angularVelocity;
     }
     public void setVelocity(double targetVelocity) {
-        if (targetVelocity == -1) {
-            velocityThread.interrupt();
+        if (velocityThread == null || !velocityThread.isAlive()) {
+            velocityThread = new VelocityThread(this, targetVelocity);
+            velocityThread.start();
         } else {
-            if (velocityThread == null) {
-                velocityThread = new VelocityThread(this, targetVelocity);
-                velocityThread.start();
-            } else {
-                velocityThread.setTargetVelocity(targetVelocity);
-                if (!velocityThread.isAlive()) {
-                    velocityThread.start();
-                }
-            }
+            velocityThread.setTargetVelocity(targetVelocity);
         }
     }
-    public double calcMaxHeight() {
-        return R*(-1+((a+Math.sqrt(a*a-4*(a-1)*Math.pow(Math.cos(Math.toRadians(b)),2)))/(2*(a-1))));
-    }
-    public double getRadiusRatio(double y) {
-        return y/Math.sqrt(y*y*(1-a)+a*y-Math.pow(Math.cos(Math.toRadians(b)),2));
-    }
-    public double calcImpactTime() {
-        double area = 0;
-        for(double i = 1 + INCREMENT; i < (1+H/R); i += INCREMENT) {
-            double dFromA = i - 1;
-            area += (INCREMENT / 2) * (getRadiusRatio(1 + dFromA) + getRadiusRatio(1 + dFromA - INCREMENT));
-        }
+    public void gravityTurn() throws RPCException, StreamException {
+        double h = getAltitude();
 
-//        return (2*R/v_0) * area;
-        System.out.println((2*R/v_0) * area);
-        return 40.96019187;
-    }
-    public double calcRange() {
-        return ((t_i-t_0)/1000)*v_0*Math.cos(Math.toRadians(b));
-    }
-    public boolean adjustPitch(double t) throws RPCException {
-        float pitch = (float)(((-2*b)/(t_i-t_0))*(t-t_0)+b);
-        System.out.println((100*(t-t_0)/(t_i-t_0)) + "%\t" + pitch + "\t" + (vessel.getAutoPilot().getPitchError()));
-        vessel.getAutoPilot().targetPitchAndHeading(pitch,0);
-
-        if ((t-t_0)/(t_i-t_0) > 1) {
-            return false;
+        double angle = ((h-h_g1)/(h_g2-h_g1))*getLaunchAngle();
+        if (Math.abs(angle-gravityTurnAngle) > 0.5) {
+            gravityTurnAngle = angle;
+            vessel.getAutoPilot().targetPitchAndHeading((float)(90-gravityTurnAngle), 90);
         }
-        return true;
+    }
+    public void stopRocket() throws RPCException {
+        velocityThread.interrupt();
+        vessel.getControl().setThrottle(0);
+        vessel.getAutoPilot().setReferenceFrame(vessel.getOrbitalReferenceFrame());
+    }
+    public double getMaxAltitude() {
+        return (((-G*M)/((.5*v_0*v_0)-((G*M)/R)))-R);
+    }
+    public double getLaunchAngle() {
+        return Math.toDegrees(Math.PI/4-thetaMax/2);
+    }
+    public double getRange() {
+        return 2*R*thetaMax;
     }
     public double getInitialVelocity() {
         return v_0;
     }
-    public double getInitialAngle() {
-        return b;
+    public double getBurnoutAltitude() {
+        return h_b;
     }
-    public double getLaunchTime() {
-        return t_0;
+    public double getLowerGravityTurnAltitude() {
+        return h_g1;
     }
-    public double getImpactTime() {
-        return t_i;
-    }
-    public double getRange() {
-        return L;
-    }
-    public double getMaxHeight() {
-        return H;
+    public double getUpperGravityTurnAltitude() {
+        return h_g2;
     }
 }

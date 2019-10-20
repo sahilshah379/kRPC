@@ -16,7 +16,7 @@ public class VelocityThread extends Thread {
         this.targetVelocity = targetVelocity;
     }
     public void run() {
-        while (true) {
+        while (!Thread.interrupted()) {
             try {
                 double currentVelocity = rocket.getVelocity();
                 double thrust = 0;
@@ -27,13 +27,12 @@ public class VelocityThread extends Thread {
                 } else {
                     thrust = (1-currentVelocity/targetVelocity)+0.5;
                 }
-//                System.out.println(currentVelocity + "\t" + targetVelocity + "\t" + thrust);
 
                 rocket.getVessel().getControl().setThrottle((float)thrust);
 
                 Thread.sleep(update);
             } catch (Exception ex) {
-                ex.printStackTrace();
+                Thread.currentThread().interrupt();
             }
         }
     }
