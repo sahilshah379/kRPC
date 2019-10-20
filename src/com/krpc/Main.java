@@ -18,7 +18,7 @@ public class Main {
 
         Rocket rocket = new Rocket();
         rocket.setupRocket();
-        rocket.launchRocket(100000,20000, 1000, 5000);
+        rocket.launchRocket(100000,25000, 1000, 5000);
 
         boolean thrust = true;
 
