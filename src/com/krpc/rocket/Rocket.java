@@ -2,7 +2,7 @@ package com.krpc.rocket;
 
 import com.krpc.Main;
 import com.krpc.math.MathUtils;
-import com.krpc.rocket.threads.VelocityThread;
+import com.krpc.math.PIDController;
 import krpc.client.RPCException;
 import krpc.client.Stream;
 import krpc.client.StreamException;
@@ -15,25 +15,21 @@ import static com.krpc.math.MathUtils.angleBetweenVectors;
 import static com.krpc.math.MathUtils.crossProduct;
 
 public class Rocket {
-    private Stream<Double> altitudeStream;
-    private Stream<Double> velocityStream;
+    private Stream<Double> altitudeStream, velocityStream, latitudeStream, longitudeStream;
 
-    private VelocityThread velocityThread;
+    public final double R = 6e5; // equatorial radius of kerbin
+    public final double M = 5.2915158e22; // mass of kerbin
+    public final double G = 6.67408e-11; // universal gravitational constant
+    public final double g = 9.81; // surface gravity
 
-    private final double R = 6e5; // equatorial radius of kerbin
-    private final double M = 5.2915158e22; // mass of kerbin
-    private final double G = 6.67408e-11; // universal gravitational constant
-    private final double g = 9.81; // surface gravity
-
-    private double h_g1; // gravitational turn lower altitude
-    private double h_g2; // gravitational turn lower altitude
-    private double v_0; // initial velocity
-    private double h_b; // burnout altitude
-    private double thetaMax; // ellipse angle
-
-    private double gravityTurnAngle = 0;
+    public double targetLat;
+    public double targetLon;
+    private float targetHeading = 90;
+    private double apogee;
+    private double distance;
 
     private Vessel vessel;
+    private PIDController controller = new PIDController(2.5,1.2,0,90, 0.1);
 
     public Rocket() throws RPCException {
         this.vessel = Main.spaceCenter.getActiveVessel();
@@ -43,20 +39,34 @@ public class Rocket {
         Flight flight = vessel.flight(vessel.getOrbit().getBody().getReferenceFrame());
         altitudeStream = Main.connection.addStream(flight, "getMeanAltitude");
         velocityStream = Main.connection.addStream(flight, "getSpeed");
+        latitudeStream = Main.connection.addStream(flight, "getLatitude");
+        longitudeStream = Main.connection.addStream(flight, "getLongitude");
     }
-    public void launchRocket() throws RPCException {
-        vessel.getControl().setSAS(false);
-        vessel.getControl().setRCS(true);
-        vessel.getControl().setThrottle(1);
-        vessel.getControl().activateNextStage();
+    public double distBetweenLocations(double lat2, double lon2) throws RPCException, StreamException {
+        double lat1 = latitudeStream.get()*Math.PI/180.0;
+        double lon1 = longitudeStream.get()*Math.PI/180.0;
+        double dLat = lat2-lat1;
+        double dLon = lon2-lon1;
+        double a = Math.sin(dLat/2.0)*Math.sin(dLat/2.0)+Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2.0)*Math.sin(dLon/2.0);
+        double c = 2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+        return R*c;
     }
-    public void launchRocket(double L, double h_b, double h_g1, double h_g2) throws RPCException, StreamException {
-        this.h_b = h_b;
-        this.h_g1 = h_g1;
-        this.h_g2 = h_g2;
+    public double angleBetweenLocations(double lat2, double lon2) throws RPCException, StreamException {
+        double lat1 = latitudeStream.get()*Math.PI/180.0;
+        double lon1 = longitudeStream.get()*Math.PI/180.0;
+        double dLon = lon2-lon1;
 
-        this.thetaMax = L/(2*R);
-        this.v_0 = Math.sqrt(2*G*M/R)*Math.sqrt(Math.sin(thetaMax)/(1+Math.sin(thetaMax)));
+        double y = Math.sin(dLon)*Math.cos(lat2);
+        double x = Math.cos(lat1)*Math.sin(lat2)-Math.sin(lat1)*Math.cos(lat2)*Math.cos(dLon);
+        return Math.toDegrees(Math.atan2(y,x));
+    }
+    public void launchRocket(double lat, double lon, double a) throws RPCException, StreamException {
+        this.distance = distBetweenLocations(lat,lon);
+        this.targetHeading = (float)angleBetweenLocations(lat,lon);
+        System.out.println(distance + "  " + targetHeading);
+        this.apogee = a;
+        targetLat = getLatitude();
+        targetLon = getLongitude();
 
         vessel.getControl().setSAS(false);
         vessel.getControl().setRCS(true);
@@ -64,15 +74,25 @@ public class Rocket {
         vessel.getControl().activateNextStage();
 
         vessel.getAutoPilot().engage();
-        vessel.getAutoPilot().targetPitchAndHeading(90,90);
-
-        setVelocity(v_0);
+        vessel.getAutoPilot().targetPitchAndHeading(90,targetHeading);
     }
     public Vessel getVessel() {
         return vessel;
     }
     public double getAltitude() throws RPCException, StreamException {
         return altitudeStream.get();
+    }
+    public double getPitch() throws RPCException, StreamException {
+        return getAttitude().getValue0();
+    }
+    public double getHeading() throws RPCException, StreamException {
+        return getAttitude().getValue1();
+    }
+    public double getLatitude() throws RPCException, StreamException {
+        return latitudeStream.get();
+    }
+    public double getLongitude() throws RPCException, StreamException {
+        return longitudeStream.get();
     }
     public double getVelocity() throws RPCException, StreamException {
         return velocityStream.get();
@@ -112,47 +132,18 @@ public class Rocket {
         Triplet<Double,Double,Double> angularVelocity = MathUtils.inverse(MathUtils.multiply(MathUtils.inverse(rotation),worldDirection));
         return angularVelocity;
     }
-    public void setVelocity(double targetVelocity) {
-        if (velocityThread == null || !velocityThread.isAlive()) {
-            velocityThread = new VelocityThread(this, targetVelocity);
-            velocityThread.start();
-        } else {
-            velocityThread.setTargetVelocity(targetVelocity);
-        }
-    }
-    public void gravityTurn() throws RPCException, StreamException {
+    public void gravityTurn(double h_g1, double h_g2) throws RPCException, StreamException {
         double h = getAltitude();
 
-        double angle = ((h-h_g1)/(h_g2-h_g1))*getLaunchAngle();
-        if (Math.abs(angle-gravityTurnAngle) > 0.5) {
-            gravityTurnAngle = angle;
-            vessel.getAutoPilot().targetPitchAndHeading((float)(90-gravityTurnAngle), 90);
-        }
+        float angle = (float)MathUtils.map(h,h_g1,h_g2,90,0);
+        controller.setTarget(angle);
+
+        double output = controller.getPIDOutput(getPitch());
+//        System.out.println(getPitch() + " " + angle + " " + (getPitch()-angle));
+        vessel.getAutoPilot().targetPitchAndHeading((float)(getPitch()+output),targetHeading);
     }
     public void stopRocket() throws RPCException {
-        velocityThread.interrupt();
         vessel.getControl().setThrottle(0);
         vessel.getAutoPilot().setReferenceFrame(vessel.getOrbitalReferenceFrame());
-    }
-    public double getMaxAltitude() {
-        return (((-G*M)/((.5*v_0*v_0)-((G*M)/R)))-R);
-    }
-    public double getLaunchAngle() {
-        return Math.toDegrees(Math.PI/4-thetaMax/2);
-    }
-    public double getRange() {
-        return 2*R*thetaMax;
-    }
-    public double getInitialVelocity() {
-        return v_0;
-    }
-    public double getBurnoutAltitude() {
-        return h_b;
-    }
-    public double getLowerGravityTurnAltitude() {
-        return h_g1;
-    }
-    public double getUpperGravityTurnAltitude() {
-        return h_g2;
     }
 }

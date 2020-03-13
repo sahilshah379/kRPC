@@ -64,6 +64,9 @@ public class MathUtils {
         stddev /= len;
         return Math.sqrt(stddev);
     }
+    public static double map(double value, double lower1, double upper1, double lower2, double upper2) {
+        return ((value-lower1)*(upper2-lower2)/(upper1-lower1))+lower2;
+    }
     public static double angleBetweenVectors(Triplet<Double, Double, Double> u, Triplet<Double, Double, Double> v) {
         double dp = u.getValue0()*v.getValue0()+u.getValue1()*v.getValue1()+u.getValue2()*v.getValue2();
         double mu = Math.sqrt(Math.pow(u.getValue0(),2)+Math.pow(u.getValue1(),2)+Math.pow(u.getValue2(),2));

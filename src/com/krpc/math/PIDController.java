@@ -6,35 +6,37 @@ public class PIDController {
     private double kD;
 
     private double target;
-    private double upperBound = 1;
-    private double lowerBound = -1;
+    private double maxI = Double.MAX_VALUE;
+    private double lastTime;
+    private double threshold;
 
     private double P = 0;
     private double I = 0;
     private double D = 0;
 
-    public PIDController(double kP, double kI, double kD, double target) {
+    public PIDController(double kP, double kI, double kD, double target, double threshold) {
         this.kP = kP;
         this.kI = kI;
         this.kD = kD;
         this.target = target;
-    }
-    public PIDController(double kP, double kI, double kD, double target, double upperBound, double lowerBound) {
-        this.kP = kP;
-        this.kI = kI;
-        this.kD = kD;
-        this.target = target;
-        this.upperBound = upperBound;
-        this.lowerBound = lowerBound;
-    }
-    public double getPIDOutput(double current, double deltaTime) {
-        P = target - current;
-        I += P * deltaTime;
-        D = ((target - current) - P) / deltaTime;
+        this.threshold = threshold;
 
-        double output = kP * P + kI * I + kD * D;
-        output = MathUtils.clamp(output, lowerBound, upperBound);
-        return output;
+        lastTime = System.currentTimeMillis();
+    }
+    public double getPIDOutput(double currentValue) {
+        double deltaTime = (System.currentTimeMillis()-lastTime)/1000.0;
+        D = ((target - currentValue) - P)/deltaTime;
+        P = target - currentValue;
+
+        if (Math.abs(currentValue - target) > threshold) {
+            I = deltaTime * P + I;
+        } else {
+            I = 0;
+        }
+
+        I = Math.min(I,maxI);
+        lastTime = System.currentTimeMillis();
+        return kP * P + kI * I + kD * D;
     }
 
     public void setKP(double kP) {
